@@ -1,0 +1,9 @@
+NAME,IP,DEVTYPE
+cisco_ios_router_or_switch,192.168.12.101,1
+cisco_asa,192.168.12.102,2
+cisco_wireless_controller,192.168.12.103,3
+hp_procurvesw01,192.168.12.104,4
+hp_comwaresw01,192.168.12.105,5
+pan_firewall_set,192.168.12.106,6
+pan_firewall_xml,192.168.12.106,7
+
