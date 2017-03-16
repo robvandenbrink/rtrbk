@@ -33,7 +33,8 @@ foreach ($dev in $devs) {
   write-host "backing up" $dev.name
   if ($dev.devtype -eq 1) { $nopage = "term len 0`n" }
   if ($dev.devtype -eq 2) { $nopage = "term page 0`n" }
-
+  if ($dev.devtype -eq 8) -or ($dev.devtype -eq 9) { $nopage = "terminal lenght 0`n" }
+  
   if (($dev.devtype -eq 1) -or ($dev.devtype -eq 2)) {
     # DEVTYPE 1 - CISCO IOS
     # DEVTYPE 2 - CISCO ASA
@@ -140,4 +141,33 @@ foreach ($dev in $devs) {
     out-file -filepath ($dev.name+$outtype+".cfg") -inputobject $cfg
     Remove-SSHSession -SSHsession $session | out-null
   }
+  
+  if (($dev.devtype -eq 8) -or ($dev.devtype -eq 9)) {
+    # DEVTYPE 8 - Ubiquiti EdgeSwitch
+    # DEVTYPE 9 - Ubiquiti EdgeRouter
+    $Session = New-SSHSession -ComputerName $dev.ip -Credential $devcreds -acceptkey:$true 
+    $stream = $Session.Session.CreateShellStream("dumb", 0, 0, 0, 0, 1000)
+    sleep 2
+    $prmpt = $stream.Read().Trim()
+    # check - need to get to enable mode?
+    if ($prmpt -like "*>*")
+      {
+      $stream.Write("en`n")
+      sleep 1
+      $stream.Write("$enapwd`n")
+      sleep 1
+      }
+  
+    $stream.Write($nopage)
+    sleep 1
+    $clearbuff = $stream.Read()
+    $stream.Write("show startup`n")
+    sleep 5
+    $cfg = $stream.Read()
+    # $stream.Write("exit`n")
+    sleep 1
+    out-file -filepath ($dev.name+".cfg") -inputobject $cfg
+    Remove-SSHSession -SSHsession $session | out-null
+  }
+  
 }
