@@ -18,21 +18,25 @@ write-host "=============================================================`n"
 
 if ($infile.length -eq 0) {  helpsyntax ; exit }
 
-# CHECK FOR DEPENDENCIES / INSTALL POSH-SSH if needed
-if ($(Get-Module -ListAvailable | ? Name -like "Posh-SSH") -eq $null) {
-iex (New-Object Net.WebClient).DownloadString("https://gist.github.com/darkoperator/6152630/raw/c67de4f7cd780ba367cccbc2593f38d18ce6df89/instposhsshdev")
-}
-
 $devcreds = get-credential
-if ($enapwd.length -eq 0) { $enapwd = $devcreds.GetNetworkCredential().password }
+if ($enapwd.length -eq 0) { 
+    $enapwd = $devcreds.GetNetworkCredential().password 
+    $uname =  $devcreds.GetNetworkCredential().username
+    }
 
 $devs = Import-Csv -path $infile
 
 
 foreach ($dev in $devs) {
   write-host "backing up" $dev.name
-  if ($dev.devtype -eq 1) { $nopage = "term len 0`n" }
-  if ($dev.devtype -eq 2) { $nopage = "term page 0`n" }
+  if ($dev.devtype -eq 1) { 
+      $nopage = "term len 0`n"
+      $bkupcmd = "show run`n"
+  }
+  if ($dev.devtype -eq 2) { 
+      $nopage = "term page 0`n"
+      $bkupcmd = "more system:running-config`n" 
+  }
 
   if (($dev.devtype -eq 1) -or ($dev.devtype -eq 2)) {
     # DEVTYPE 1 - CISCO IOS
@@ -53,12 +57,11 @@ foreach ($dev in $devs) {
     $stream.Write($nopage)
     sleep 1
     $clearbuff = $stream.Read()
-    $stream.Write("show startup`n")
+    $stream.Write($bkupcmd)
     sleep 5
     $cfg = $stream.Read()
     # $stream.Write("exit`n")
     sleep 1
-    out-file -filepath ($dev.name+".cfg") -inputobject $cfg
     Remove-SSHSession -SSHsession $session | out-null
   }
   if($dev.devtype -eq 3) {
@@ -82,7 +85,6 @@ foreach ($dev in $devs) {
     $cfg = $stream.Read()
     $stream.Write("exit`n")
     sleep 1
-    out-file -filepath ($dev.name+".cfg") -inputobject $cfg
     Remove-SSHSession -SSHsession $session | out-null
     }
   if ($dev.devtype -eq 4) {
@@ -91,6 +93,22 @@ foreach ($dev in $devs) {
     $stream = $Session.Session.CreateShellStream("dumb", 0, 0, 0, 0, 1000)
     sleep 10
     $stream.Write("`n")
+    $clearbuff = $stream.Read()
+    $stream.Write("`n")
+    $stream.Write("`n")
+    sleep 2
+    $prmpt = $stream.Read().Trim()
+     # check - need to get to enable mode?
+    if ($prmpt -like "*>*")
+      {
+      $stream.Write("ena`n")
+      sleep 2
+      $stream.Write("$uname`n")
+      sleep 2
+      $stream.Write("$enapwd`n")
+      sleep 1
+      }
+
     $stream.Write("no page`n")
     $clearbuff = $stream.Read()
     sleep 2
@@ -99,7 +117,6 @@ foreach ($dev in $devs) {
     $cfg = $stream.Read() 
     $cfg = $cfg  -split "`n" | ?{$_ -notmatch "\x1B"}   # strip out ANSI Escape Chars
     sleep 1
-    out-file -filepath ($dev.name+".cfg") -inputobject $cfg
     Remove-SSHSession -SSHsession $session | out-null
   }
 
@@ -117,11 +134,10 @@ foreach ($dev in $devs) {
     $cfg = $stream.Read()
     $stream.Write("exit`n")
     sleep 1
-    out-file -filepath ($dev.name+".cfg") -inputobject $cfg
     Remove-SSHSession -SSHsession $session | out-null
   }
   if (($dev.devtype -eq 6) -or ($dev.devtype -eq 7)) {
-    # DEVTYPE 6 or 7 - PALO ALTO SWITCH
+    # DEVTYPE 6 or 7 - PALO ALTO FIREWALL, backup two ways
     if ($dev.devtype -eq 5) { $outcmd = "set cli config-output-format set`n" ; $outtype = "set"}
     if ($dev.devtype -eq 6) { $outcmd = "set cli config-output-format xml`n" ; $outtype = "xml" }
     $Session = New-SSHSession -ComputerName $dev.ip -Credential $devcreds -acceptkey:$true
@@ -137,7 +153,77 @@ foreach ($dev in $devs) {
     $cfg = $stream.Read()
     $stream.Write("exit`n")
     sleep 1
-    out-file -filepath ($dev.name+$outtype+".cfg") -inputobject $cfg
     Remove-SSHSession -SSHsession $session | out-null
   }
+ if ($dev.devtype -eq 8) {
+    # DEVTYPE 7 - JUNOS
+    $cfg = ""
+    $Session = New-SSHSession -ComputerName $dev.ip -Credential $devcreds -acceptkey:$true
+    $stream = $Session.Session.CreateShellStream("dumb", 0, 0, 0, 0, 1000)
+    sleep 2
+    $stream.Write("cli`n")
+    sleep 1
+    $clearbuff = $stream.Read()
+    $stream.Write("set cli screen-length 0`n")
+    sleep 1
+    $clearbuff = $stream.Read()
+    $stream.Write("show config`n")
+    sleep 5
+    $cfg = $stream.Read()
+    $clearbuff = $stream.Read()
+    sleep 1
+
+    # also collect HW information
+    $stream.Write("show chassis hardware`n")
+    sleep 5
+    $cfg = $cfg + $stream.Read()
+    $clearbuff = $stream.Read()
+    sleep 1
+    $stream.Write("exit`nexit`n")
+    sleep 1
+    Remove-SSHSession -Index 0 | Out-Null 
+  }
+  if ($dev.devtype -eq 9) {
+    # DEVTYPE 8 - Cisco SF / SG
+    $Session = New-SSHSession -ComputerName $dev.ip -Credential $devcreds -acceptkey:$true
+    $stream = $Session.Session.CreateShellStream("dumb", 0, 0, 0, 0, 1000)
+    sleep 2
+    $stream.Write("`n")
+    $stream.Write("terminal datadump`n")
+    $clearbuff = $stream.Read()
+    sleep 1
+    $stream.Write("show inventory`n")
+    sleep 2
+    $cfg = $stream.Read()
+    $stream.Write("show ver`n")
+    sleep 2
+    $cfg = $cfg + $stream.Read()
+    $stream.Write("terminal datadump`n")
+    $clearbuff = $stream.Read()
+    sleep 1
+    $stream.Write("show run`n")
+    sleep 10
+    $cfg = $cfg + $stream.Read()
+    $stream.Write("exit`n")
+    sleep 1
+    Remove-SSHSession -Index 0 | Out-Null 
+  }
+
+
+# archive existing device backup by creation date
+$fname = $dev.name+".cfg"
+if (test-path $fname) {
+   $d = (gci $fname).lastwritetime
+   $rfname =  $d.tostring("yyyy-MM-dd-hh-mm") +"-" + $fname
+   rename-item $fname $rfname
+   }
+
+out-file -filepath $fname -inputobject $cfg
+
+# diff new and old files - only if there is an old file
+if ($rfname.length -gt 0) {
+    $diffname = $dev.name + ".diff.txt"
+    Compare-Object (get-Content $rfname) (get-content $fname) > $diffname
+    }
+$rfname = ""
 }
