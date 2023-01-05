@@ -138,8 +138,8 @@ foreach ($dev in $devs) {
   }
   if (($dev.devtype -eq 6) -or ($dev.devtype -eq 7)) {
     # DEVTYPE 6 or 7 - PALO ALTO FIREWALL, backup two ways
-    if ($dev.devtype -eq 5) { $outcmd = "set cli config-output-format set`n" ; $outtype = "set"}
-    if ($dev.devtype -eq 6) { $outcmd = "set cli config-output-format xml`n" ; $outtype = "xml" }
+    if ($dev.devtype -eq 6) { $outcmd = "set cli config-output-format set`n" ; $outtype = "set"}
+    if ($dev.devtype -eq 7) { $outcmd = "set cli config-output-format xml`n" ; $outtype = "xml" }
     $Session = New-SSHSession -ComputerName $dev.ip -Credential $devcreds -acceptkey:$true
     $stream = $Session.Session.CreateShellStream("dumb", 0, 0, 0, 0, 1000)
     sleep 2
